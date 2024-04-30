@@ -9,23 +9,39 @@ const renderer = new THREE.WebGLRenderer();
 renderer.setSize(window.innerWidth, window.innerHeight);
 document.body.appendChild(renderer.domElement);
 
-// const geometry = new THREE.BufferGeometry();
-// const material = new THREE.PointsMaterial({ color: 0xffffff, size: 10.0 });
-// const particles = new THREE.Points(geometry, material);
-// scene.add(particles);
+// Create an empty BufferGeometry
+const geometry = new THREE.BufferGeometry();
+const positions = [];
+const numParticles = 100;
+for (let i = 0; i < numParticles; i++) {
+    // Push x, y, z coordinates
+    positions.push(Math.random() * 20 - 10, Math.random() * 20 - 10, Math.random() * 20 - 10);
+}
 
-const material = new THREE.LineBasicMaterial({ color: 0xffffff });
-const points = [];
-points.push(new THREE.Vector3(-10, 0, 0));
-points.push(new THREE.Vector3(0, 10, 0));
-points.push(new THREE.Vector3(10, 0, 0));
-const geometry = new THREE.BufferGeometry().setFromPoints(points);
-const line = new THREE.Line(geometry, material);
-scene.add(line)
+// Create a Float32Array and set it as the position attribute
+const positionAttribute = new THREE.Float32BufferAttribute(positions, 3);
+geometry.setAttribute('position', positionAttribute);
+const material = new THREE.PointsMaterial({ color: 0xffffff, size: 1.0 });
+const particles = new THREE.Points(geometry, material);
+scene.add(particles)
+
+function updatePositions() {
+    // Calculate new positions (example logic)
+    for (let i = 0; i < numParticles; i++) {
+        geometry.attributes.position.array[i * 3 + 0] += (Math.random() - 0.5) * 0.1;  // X
+        geometry.attributes.position.array[i * 3 + 1] += (Math.random() - 0.5) * 0.1;  // Y
+        geometry.attributes.position.array[i * 3 + 2] += (Math.random() - 0.5) * 0.1;  // Z
+    }
+
+    // Notify Three.js that the positions have changed
+    geometry.attributes.position.needsUpdate = true;
+}
 
 function animate() {
-  requestAnimationFrame(animate);
-  renderer.render(scene, camera);
+    camera.position.set(0, 0, 20*Math.sin(Date.now()/1000)**2);
+    updatePositions();
+    renderer.render(scene, camera);
+    requestAnimationFrame(animate);
 }
 
 animate();
