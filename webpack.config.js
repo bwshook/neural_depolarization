@@ -1,33 +1,26 @@
 const path = require('path');
 
 module.exports = {
-  entry: './src/app.ts', // Change 'app.ts' to your main TypeScript file
+  entry: './src/app.ts',
   module: {
     rules: [
       {
         test: /\.tsx?$/,
         use: 'ts-loader',
-        exclude: /node_modules/,
+        include: [path.resolve(__dirname, 'src')],
       },
     ],
   },
-  resolve: {
-    extensions: ['.tsx', '.ts', '.js'],
-  },
   output: {
     filename: 'bundle.js',
-    path: path.resolve(__dirname, 'public/dist'),
+    path: path.resolve(__dirname, 'public'),
   },
   mode: 'development',
   devServer: {
-    static: {
-      directory: path.join(__dirname, 'public'),
-      watch: true,
-    },
-    devMiddleware: {
-      writeToDisk: true,
-    },
     port: 9000,
-    hot: true,
+    host: '0.0.0.0',
   },
+  watchOptions: {
+    poll: 1000 // enable polling since fsevents are not supported in docker
+  }
 };

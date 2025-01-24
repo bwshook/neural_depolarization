@@ -2,7 +2,7 @@ import * as THREE from 'three';
 
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-camera.position.set(0, 0, 100);
+camera.position.set(0, 0, 30);
 camera.lookAt(0, 0, 0);
 
 const renderer = new THREE.WebGLRenderer();
@@ -12,7 +12,7 @@ document.body.appendChild(renderer.domElement);
 // Create an empty BufferGeometry
 const geometry = new THREE.BufferGeometry();
 const positions = [];
-const numParticles = 100;
+const numParticles = 2;
 for (let i = 0; i < numParticles; i++) {
     // Push x, y, z coordinates
     positions.push(Math.random() * 20 - 10, Math.random() * 20 - 10, Math.random() * 20 - 10);
@@ -24,6 +24,14 @@ geometry.setAttribute('position', positionAttribute);
 const material = new THREE.PointsMaterial({ color: 0xffffff, size: 1.0 });
 const particles = new THREE.Points(geometry, material);
 scene.add(particles)
+
+// Create a boundary box
+const boxSize = 20;
+const boxGeometry = new THREE.BoxGeometry(boxSize, boxSize, boxSize);
+const boxEdges = new THREE.EdgesGeometry(boxGeometry);
+const boxMaterial = new THREE.LineBasicMaterial({ color: 0xff0000 });
+const boxWireframe = new THREE.LineSegments(boxEdges, boxMaterial);
+scene.add(boxWireframe);
 
 function updatePositions() {
     // Calculate new positions (example logic)
@@ -38,7 +46,7 @@ function updatePositions() {
 }
 
 function animate() {
-    camera.position.set(0, 0, 20*Math.sin(Date.now()/1000)**2);
+    // camera.position.set(0, 0, 20*Math.sin(Date.now()/1000)**2);
     updatePositions();
     renderer.render(scene, camera);
     requestAnimationFrame(animate);
