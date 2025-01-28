@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { ParticleSystem } from './ParticleSystem';
 
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
@@ -9,45 +10,17 @@ const renderer = new THREE.WebGLRenderer();
 renderer.setSize(window.innerWidth, window.innerHeight);
 document.body.appendChild(renderer.domElement);
 
-// Create an empty BufferGeometry
-const geometry = new THREE.BufferGeometry();
-const positions = [];
-const numParticles = 2;
-for (let i = 0; i < numParticles; i++) {
-    // Push x, y, z coordinates
-    positions.push(Math.random() * 20 - 10, Math.random() * 20 - 10, Math.random() * 20 - 10);
-}
-
-// Create a Float32Array and set it as the position attribute
-const positionAttribute = new THREE.Float32BufferAttribute(positions, 3);
-geometry.setAttribute('position', positionAttribute);
-const material = new THREE.PointsMaterial({ color: 0xffffff, size: 1.0 });
-const particles = new THREE.Points(geometry, material);
-scene.add(particles)
-
-// Create a boundary box
-const boxSize = 20;
-const boxGeometry = new THREE.BoxGeometry(boxSize, boxSize, boxSize);
-const boxEdges = new THREE.EdgesGeometry(boxGeometry);
-const boxMaterial = new THREE.LineBasicMaterial({ color: 0xff0000 });
-const boxWireframe = new THREE.LineSegments(boxEdges, boxMaterial);
-scene.add(boxWireframe);
-
-function updatePositions() {
-    // Calculate new positions (example logic)
-    for (let i = 0; i < numParticles; i++) {
-        geometry.attributes.position.array[i * 3 + 0] += (Math.random() - 0.5) * 0.1;  // X
-        geometry.attributes.position.array[i * 3 + 1] += (Math.random() - 0.5) * 0.1;  // Y
-        geometry.attributes.position.array[i * 3 + 2] += (Math.random() - 0.5) * 0.1;  // Z
-    }
-
-    // Notify Three.js that the positions have changed
-    geometry.attributes.position.needsUpdate = true;
-}
+const topParticleSystem = new ParticleSystem(30, -20, 20, -20, 0);
+const botParticleSystem = new ParticleSystem(30, -20, 20, 0, 20);
+topParticleSystem.addToScene(scene, 0xff0000);
+topParticleSystem.addBoundariesToScene(scene, 0xffffff);
+botParticleSystem.addToScene(scene, 0x0000ff);
+botParticleSystem.addBoundariesToScene(scene, 0xffffff);
 
 function animate() {
     // camera.position.set(0, 0, 20*Math.sin(Date.now()/1000)**2);
-    updatePositions();
+    topParticleSystem.update();
+    botParticleSystem.update();
     renderer.render(scene, camera);
     requestAnimationFrame(animate);
 }
