@@ -1,25 +1,45 @@
 import { MersenneTwister19937, real } from "random-js"
 import * as THREE from 'three';
 
+export class Rect {
+    public left: number;
+    public right: number;
+    public bottom: number;
+    public top: number;
+
+    constructor(left = 0, right = 0, bottom = 0, top = 0) {
+        this.left = left;
+        this.right = right;
+        this.bottom = bottom;
+        this.top = top;
+    }
+
+    isPointInside(x: number, y: number) {
+        return x >= this.left && x <= this.right && y >= this.bottom && y <= this.top;
+    }
+}
+
 export class ParticleSystem {
     private positions: Float32Array;
     private velocities: Float32Array;
     private maxNumParticles: number;
     private activeParticles: boolean[];
-    private boundaryBox: [left: number, right: number, bottom: number, top: number];
+    private boundaryBox: Rect;
     private rng: MersenneTwister19937;
     private geometry = new THREE.BufferGeometry();
+    private blockages: Rect[] = [];
+    private pumps: Rect[] = [];
 
-    constructor(maxNumParticles: number, left: number, right: number, bottom: number, top: number) {
+    constructor(maxNumParticles: number, boundaryBox: Rect) {
         this.maxNumParticles = maxNumParticles;
         this.positions = new Float32Array(maxNumParticles * 3);
         this.velocities = new Float32Array(maxNumParticles * 3);
         this.activeParticles = new Array(maxNumParticles).fill(true);
-        this.boundaryBox = [left, right, bottom, top];
+        this.boundaryBox = boundaryBox;
         this.rng = MersenneTwister19937.seed(1234);
 
-        const xPosDist = real(left, right);
-        const yPosDist = real(bottom, top);
+        const xPosDist = real(boundaryBox.left, boundaryBox.right);
+        const yPosDist = real(boundaryBox.bottom, boundaryBox.top);
         const xVelDist = real(-0.1, 0.1);
         const yVelDist = real(-0.1, 0.1);
         for (let i = 0; i < maxNumParticles; i++) {
@@ -49,6 +69,7 @@ export class ParticleSystem {
     }
 
     update() {
+        const brownian = real(-0.01, 0.01);
         for (let i = 0; i < this.maxNumParticles; i++) {
             let x = i * 3;
             let y = x + 1;
@@ -57,12 +78,62 @@ export class ParticleSystem {
                 this.positions[x] += this.velocities[x];
                 this.positions[y] += this.velocities[y];
 
-                if (this.positions[x] < this.boundaryBox[0] || this.positions[x] > this.boundaryBox[1]) {
+                this.velocities[x] *= 0.99;
+                this.velocities[y] *= 0.99;
+
+                this.velocities[x] += brownian(this.rng);
+                this.velocities[y] += brownian(this.rng);
+
+                // Charge interaction
+                const charge = -0.0005;
+                for (let j = 0; j < this.maxNumParticles; j++) {
+                    if (i !== j && this.activeParticles[j]) {
+                        let jx = j * 3;
+                        let jy = jx + 1;
+                        let dx = this.positions[jx] - this.positions[x];
+                        let dy = this.positions[jy] - this.positions[y];
+                        let r2 = dx * dx + dy * dy;
+                        let r1 = Math.sqrt(r2);
+                        // Limit the interaction range
+                        if (r1 < 0.1) {
+                            continue;
+                        }
+                        let r3 = r1*r2;
+                        this.velocities[x] += charge * dx / r3;
+                        this.velocities[y] += charge * dy / r3;
+                    }
+                }
+
+                // Boundary collision
+                if (this.positions[x] < this.boundaryBox.left || this.positions[x] > this.boundaryBox.right) {
                     this.velocities[x] = -this.velocities[x];
                 }
-                if (this.positions[y] < this.boundaryBox[2] || this.positions[y] > this.boundaryBox[3]) {
+                if (this.positions[y] < this.boundaryBox.bottom || this.positions[y] > this.boundaryBox.top) {
                     this.velocities[y] = -this.velocities[y];
                 }
+
+                // Pump collision
+                let pumpCollision = false;
+                for (let pump of this.pumps) {
+                    if (pump.isPointInside(this.positions[x], this.positions[y])) {
+                        // Apply a force to move the particle towards the pump
+                        this.velocities[x] = 0;
+                        this.velocities[y] = 0.1;
+                        pumpCollision = true;
+                    }
+                }
+                if (pumpCollision) {
+                    continue;
+                }
+
+                // Blockage collision
+                for (let blockage of this.blockages) {
+                    if (blockage.isPointInside(this.positions[x], this.positions[y])) {
+                        // Apply a force to move the particle away from the blockage
+                        this.velocities[y] = -0.9*this.velocities[y];
+                    }
+                }
+
             }
         }
         this.geometry.attributes.position.needsUpdate = true;
@@ -88,19 +159,32 @@ export class ParticleSystem {
         return this.geometry;
     }
 
-    addBoundariesToScene(scene: THREE.Scene, color: number) {
-        function createWireBox(xSize: number, ySize: number, zSize: number, color: number) {
-            const boxGeo = new THREE.BoxGeometry(xSize, ySize, zSize);
-            const boxEdges = new THREE.EdgesGeometry(boxGeo);
-            const boxMat = new THREE.LineBasicMaterial({ color: color });
-            return new THREE.LineSegments(boxEdges, boxMat);
-        }
-
-        const simWidth = this.boundaryBox[1] - this.boundaryBox[0];
-        const simHeight = this.boundaryBox[3] - this.boundaryBox[2];
-        const upperSimBox = createWireBox(simWidth, simHeight, 0, color);
-        upperSimBox.position.x = (this.boundaryBox[1] + this.boundaryBox[0]) / 2;
-        upperSimBox.position.y = (this.boundaryBox[3] + this.boundaryBox[2]) / 2;
-        scene.add(upperSimBox);
+    addBoundary(scene: THREE.Scene, color: number) {
+        const boundbox = createWireBox2D(this.boundaryBox, color);
+        scene.add(boundbox);
     }
+
+    addBlockage(blockage: Rect, scene: THREE.Scene, color: number) {
+        const blockageBox = createWireBox2D(blockage, color);
+        scene.add(blockageBox);
+        this.blockages.push(blockage);
+    }
+
+    addPump(pump: Rect, scene: THREE.Scene, color: number) {
+        const pumpBox = createWireBox2D(pump, color);
+        scene.add(pumpBox);
+        this.pumps.push(pump);
+    }
+}
+
+function createWireBox2D(box: Rect, color: number) {
+    const xSize = box.right - box.left;
+    const ySize = box.top - box.bottom;
+    const boxGeo = new THREE.BoxGeometry(xSize, ySize, 0);
+    const boxEdges = new THREE.EdgesGeometry(boxGeo);
+    const boxMat = new THREE.LineBasicMaterial({ color: color });
+    const boxSegs = new THREE.LineSegments(boxEdges, boxMat);
+    boxSegs.position.x = (box.left + box.right) / 2;
+    boxSegs.position.y = (box.bottom + box.top) / 2;
+    return boxSegs;
 }
