@@ -21,6 +21,7 @@
     "webpack-dev-server": "^5.2.0"
   },
   "dependencies": {
+    "@stdlib/array-linspace": "^0.2.1",
     "random-js": "^2.1.0",
     "three": "^0.164.1"
   }
