@@ -23,7 +23,7 @@ export class Rect {
     }
 }
 
-class Gate extends Rect {
+class VoltageGatedChannel extends Rect {
     public isOpen: boolean = false;
     public gateBox: THREE.LineSegments;
     public fieldVector: THREE.Vector3 = new THREE.Vector3(0, 1, 0);
@@ -67,27 +67,24 @@ class Gate extends Rect {
         this.fieldArrow.setDirection(efield.clone().normalize());
         this.fieldArrow.setLength(efield.length());
 
-        // const debugElement = document.getElementById("debug");
-        // if (debugElement) {
-        //     debugElement.innerText = efield.y.toFixed(2);
+        // if (efield.y < -0.4) {
+        //     this.open();
+        //     this.fieldArrow.setColor(0xff0000);
+        // } 
+        // else if (efield.y > 0.0) {
+        //     this.close();
         // }
-
-        if (efield.y < -0.4) {
-            this.open();
-            this.fieldArrow.setColor(0xff0000);
-        } 
-        else if (efield.y > 0.0) {
-            this.close();
-        }
     }
 }
 
 class ConstantConcentration extends Rect {
     public concentration: number;
+    public atConcentration: boolean;
 
     constructor(rect: Rect, concentration: number) {
         super(rect.left, rect.right, rect.bottom, rect.top);
         this.concentration = concentration;
+        this.atConcentration = false;
     }
 
     update(particlePositions: Float32Array, activeParticles: boolean[], particleCount: number, rng: MersenneTwister19937) {
@@ -106,13 +103,15 @@ class ConstantConcentration extends Rect {
                     break;
                 }
             }
+        } else {
+            this.atConcentration = true;
         }
 
         if (count > this.concentration) {
             for (let i = 0; i < particleCount; i++) {
-                if (activeParticles[i]) {
-                    let x = i * 3;
-                    let y = x + 1;
+                let x = i * 3;
+                let y = x + 1;
+                if (activeParticles[i] && this.isPointInside(particlePositions[x], particlePositions[y])) {
                     particlePositions[x] = 1000;
                     particlePositions[y] = 1000;
                     activeParticles[i] = false;
@@ -150,8 +149,9 @@ export class ParticleSystem {
     private geometry = new THREE.BufferGeometry();
     private blockages: Rect[] = [];
     private pumps: Rect[] = [];
-    private gates: Gate[] = [];
+    private gates: VoltageGatedChannel[] = [];
     private constantConcentrations: ConstantConcentration[] = [];
+    private depolarization: boolean = false;
 
     constructor(maxNumParticles: number, boundaryBox: Rect) {
         this.maxNumParticles = maxNumParticles;
@@ -161,12 +161,6 @@ export class ParticleSystem {
         this.boundaryBox = boundaryBox;
         this.rng = MersenneTwister19937.seed(1234);
 
-        // const xPosDist = real(boundaryBox.left, boundaryBox.right);
-        // const yPosDist = real(boundaryBox.bottom, boundaryBox.top);
-        // const yPosDist = real(2, boundaryBox.top);
-        // const yPosDist = real(boundaryBox.bottom, -2);
-        // const xVelDist = real(-0.1, 0.1);
-        // const yVelDist = real(-0.1, 0.1);
         for (let i = 0; i < maxNumParticles; i++) {
             let x = i * 3;
             let y = x + 1;
@@ -182,26 +176,41 @@ export class ParticleSystem {
         }
     }
 
-    setParticleActive(index: number, active: boolean) {
-        if (index >= 0 && index < this.maxNumParticles) {
-            this.activeParticles[index] = active;
-            if (!active) {
-                // Move particle off-screen when inactive
-                this.positions[index * 3] = 1000;
-                this.positions[index * 3 + 1] = 1000;
+    createParticles(count: number, area: Rect) {
+        // Find first inactive particle
+        let firstInactive = -1;
+        for (let i = 0; i < this.maxNumParticles; i++) {
+            if (!this.activeParticles[i]) {
+                firstInactive = i;
+                break;
             }
+        }
+
+        for (let j = 0; j < count; j++) {
+            let i = firstInactive + j;
+            if (i >= this.maxNumParticles) {
+                break;
+            }
+            let x = i * 3;
+            let y = x + 1;
+            let z = x + 2;
+            let xDist = real(area.left, area.right);
+            let yDist = real(area.bottom, area.top);
+            this.positions[x] = xDist(this.rng);
+            this.positions[y] = yDist(this.rng);
+            this.activeParticles[i] = true;
         }
     }
 
     update() {
-        // Gate update
-        for (let gate of this.gates) {
-            gate.update(this.positions, this.maxNumParticles);
-        }
-
         // Constant concentration update
         for (let concentration of this.constantConcentrations) {
             concentration.update(this.positions, this.activeParticles, this.maxNumParticles, this.rng);
+        }
+
+        // Gate update
+        for (let gate of this.gates) {
+            gate.update(this.positions, this.maxNumParticles);
         }
 
         // Particle movement
@@ -236,21 +245,44 @@ export class ParticleSystem {
             }
 
             // Pump interaction
-            const pumpCharge = 0.2;
+            const pumpCharge = 0.1;
+            const forceLimit = 0.05;
             for (let pump of this.pumps) {
                 if (pump.isPointInside(this.positions[x], this.positions[y])) {
                     continue;
                 }
                 // Charge 1
-                const forceLimit = 0.5;
                 const mx = (pump.left + pump.right) / 2;
                 let r2 = new THREE.Vector3(mx, pump.top, 0);
-                let f = chargeForce(pumpCharge, r1, r2);
+                let f = chargeForce(-pumpCharge, r1, r2);
                 fx += clamp(f.x, -forceLimit, forceLimit);
                 fy += clamp(f.y, -forceLimit, forceLimit);
 
                 // Charge 2
                 r2 = new THREE.Vector3(mx, pump.bottom, 0);
+                f = chargeForce(pumpCharge, r1, r2);
+                fx += clamp(f.x, -forceLimit, forceLimit);
+                fy += clamp(f.y, -forceLimit, forceLimit);
+            }
+            
+            // Gate interaction
+            const gateCharge = 0.1;
+            for (let gate of this.gates) {
+                if (gate.isPointInside(this.positions[x], this.positions[y])) {
+                    continue;
+                }
+                if (!gate.isOpen) {
+                    continue;
+                }
+                // Charge 1
+                const mx = (gate.left + gate.right) / 2;
+                let r2 = new THREE.Vector3(mx, gate.top, 0);
+                let f = chargeForce(pumpCharge, r1, r2);
+                fx += clamp(f.x, -forceLimit, forceLimit);
+                fy += clamp(f.y, -forceLimit, forceLimit);
+
+                // Charge 2
+                r2 = new THREE.Vector3(mx, gate.bottom, 0);
                 f = chargeForce(-pumpCharge, r1, r2);
                 fx += clamp(f.x, -forceLimit, forceLimit);
                 fy += clamp(f.y, -forceLimit, forceLimit);
@@ -282,9 +314,9 @@ export class ParticleSystem {
             for (let pump of this.pumps) {
                 if (pump.isPointInside(this.positions[x], this.positions[y])) {
                     // Apply a force to move the particle towards the pump
-                    this.positions[y] = pump.top+1;
-                    this.velocities[x] = 0.1*this.velocities[x];
-                    this.velocities[y] = 0.1*this.velocities[y];
+                    this.positions[y] = pump.bottom-1;
+                    this.velocities[x] = 0.01*this.velocities[x];
+                    this.velocities[y] = 0.01*this.velocities[y];
                     pumpCollision = true;
                 }
             }
@@ -297,7 +329,7 @@ export class ParticleSystem {
             for (let gate of this.gates) {
                 if (gate.isOpen) {
                     if (gate.isPointInside(this.positions[x], this.positions[y])) {
-                        this.positions[y] = gate.bottom-1;
+                        this.positions[y] = gate.top+1;
                         gateCollision = true;
                         break;
                     }
@@ -330,10 +362,23 @@ export class ParticleSystem {
             new Rect(this.boundaryBox.left, this.boundaryBox.right, 0.5, this.boundaryBox.top), 
             this.maxNumParticles
         );
+        if (count > 220) {
+            // Close all gates
+            for(let gate of this.gates) {
+                gate.close();
+            }
+        }
         const debugElement = document.getElementById("debug1");
         if (debugElement) {
             debugElement.innerText = count.toString();
         }
+    }
+
+    forceOpenGates() {
+        for (let gate of this.gates) {
+            gate.open();
+        }
+        this.depolarization = true;
     }
 
     getPositions() {
@@ -344,7 +389,7 @@ export class ParticleSystem {
         return this.velocities;
     }
 
-    addParticles(scene: THREE.Scene, color: number) {
+    addParticlesToScene(scene: THREE.Scene, color: number) {
         this.geometry.setAttribute('position', new THREE.BufferAttribute(this.getPositions(), 3));
         const material = new THREE.PointsMaterial({ color: color, size: 0.2 });
         const points = new THREE.Points(this.geometry, material);
@@ -356,7 +401,7 @@ export class ParticleSystem {
         return this.geometry;
     }
 
-    addBoundary(scene: THREE.Scene, color: number) {
+    addBoundaryToScene(scene: THREE.Scene, color: number) {
         const boundbox = createWireBox2D(this.boundaryBox, color);
         scene.add(boundbox);
     }
@@ -374,7 +419,7 @@ export class ParticleSystem {
     }
 
     addGate(gate: Rect, scene: THREE.Scene) {
-        this.gates.push(new Gate(gate, scene));
+        this.gates.push(new VoltageGatedChannel(gate, scene));
     }
 
     addConstantConcentration(area: Rect, concentration: number) {
