@@ -427,6 +427,22 @@ export class ParticleSystem {
         this.constantConcentrations.push(constantConstraint);
     }
 
+    getMembranePotential(): number {
+        let topCount = countParticles(
+            this.positions,
+            new Rect(this.boundaryBox.left, this.boundaryBox.right, 1, this.boundaryBox.top),
+            this.maxNumParticles
+        );
+        let bottomCount = countParticles(
+            this.positions,
+            new Rect(this.boundaryBox.left, this.boundaryBox.right, this.boundaryBox.bottom, -1),
+            this.maxNumParticles
+        );
+        
+        // Avoid division by zero
+        if (bottomCount === 0) return 0;
+        return topCount / bottomCount;
+    }
 }
 
 function chargeForce(charge: number, r1: THREE.Vector3, r2: THREE.Vector3) {

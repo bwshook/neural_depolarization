@@ -22,6 +22,27 @@ depolarizeBtn.style.fontSize = '16px';
 depolarizeBtn.style.cursor = 'pointer';
 document.body.appendChild(depolarizeBtn);
 
+// Add potential plot canvas
+const plotCanvas = document.createElement('canvas');
+plotCanvas.width = 300;
+plotCanvas.height = 150;
+plotCanvas.style.position = 'absolute';
+plotCanvas.style.bottom = '10px';
+plotCanvas.style.right = '10px';
+plotCanvas.style.backgroundColor = 'rgba(0, 0, 0, 0.5)';
+plotCanvas.style.border = '1px solid #444';
+plotCanvas.style.width = '300px';  // Force display size
+plotCanvas.style.height = '150px'; // Force display size
+document.body.appendChild(plotCanvas);
+
+const ctx = plotCanvas.getContext('2d')!;
+ctx.strokeStyle = '#00ff00';
+ctx.lineWidth = 2;
+
+// Store last 300 potential values (1 per pixel width)
+const potentialHistory: number[] = new Array(300).fill(1);
+let currentIndex = 0;
+
 const simHalfWidth = 60;
 const simHalfHeight = 20;
 const particleSystem = new ParticleSystem(1000, new Rect(-simHalfWidth, simHalfWidth, -simHalfHeight, simHalfHeight));
@@ -47,8 +68,51 @@ depolarizeBtn.addEventListener('click', () => {
     particleSystem.forceOpenGates();
 });
 
+function updatePotentialPlot() {
+    const potential = particleSystem.getMembranePotential();
+    potentialHistory[currentIndex] = potential;
+    currentIndex = (currentIndex + 1) % potentialHistory.length;
+
+    // Clear canvas
+    ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+    ctx.fillRect(0, 0, plotCanvas.width, plotCanvas.height);
+
+    // Draw grid
+    ctx.strokeStyle = '#333333';
+    ctx.lineWidth = 1;
+    for (let i = 0; i < 5; i++) {
+        const y = i * plotCanvas.height / 4;
+        ctx.beginPath();
+        ctx.moveTo(0, y);
+        ctx.lineTo(plotCanvas.width, y);
+        ctx.stroke();
+    }
+
+    // Draw potential line
+    ctx.strokeStyle = '#00ff00';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    for (let i = 0; i < potentialHistory.length; i++) {
+        const x = i;
+        const y = plotCanvas.height - (potentialHistory[(i + currentIndex) % potentialHistory.length] * plotCanvas.height / 4);
+        if (i === 0) {
+            ctx.moveTo(x, y);
+        } else {
+            ctx.lineTo(x, y);
+        }
+    }
+    ctx.stroke();
+
+    // Draw axis labels
+    ctx.fillStyle = '#ffffff';
+    ctx.font = '12px Arial';
+    ctx.fillText('Time →', plotCanvas.width - 50, plotCanvas.height - 5);
+    ctx.fillText('Vm', 5, 15);
+}
+
 function animate() {
     particleSystem.update();
+    updatePotentialPlot();
     renderer.render(scene, camera);
     requestAnimationFrame(animate);
 }
